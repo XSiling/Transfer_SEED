@@ -10,6 +10,7 @@ from torch.autograd import Variable
 import scipy.io as sio
 from sklearn.preprocessing import MinMaxScaler
 from net import BackboneNetwork, Classifier
+import matplotlib.pyplot as plt
 
 # import data_loader
 
@@ -25,6 +26,7 @@ parser.add_argument("--shuffle", default=True)
 parser.add_argument("--weight_L2norm", default=0.05)
 parser.add_argument("--lr", default=1e-3)
 parser.add_argument("--data_path", default='../../')
+parser.add_argument("--result_file", default='result.txt')
 args = parser.parse_args()
 
 if args.use_gpu:
@@ -99,8 +101,10 @@ target_loader = DataLoader(target_set, batch_size=args.batch_size, shuffle=args.
 
 
 def train():
+    loss = 0
+    loss_list = []
     for epoch in range(1, args.pre_epochs + 1):
-        for i, (s_data, s_label) in tqdm(enumerate(source_loader)):
+        for i, (s_data, s_label) in tqdm(enumerate(source_loader), desc='pre_train epoch'+str(epoch)):
             if s_data.size(0) != args.batch_size:
                 continue
 
@@ -125,7 +129,7 @@ def train():
     for epoch in range(1, args.epoch + 1):
         source_loader_iter = iter(source_loader)
         target_loader_iter = iter(target_loader)
-        print(">>training epoch:" + str(epoch))
+        #print(">>training epoch:" + str(epoch))
 
         for i, (t_data, _) in tqdm(enumerate(target_loader_iter)):
             try:
@@ -159,8 +163,43 @@ def train():
             optimG.step()
             optimF.step()
 
-        if epoch % 10 == 0:
-            torch.save(netG.state_dict(), "./model/netG"+str(epoch)+".pth")
-            torch.save(netF.state_dict(), "./model/netF"+str(epoch)+".pth")
+        #if epoch % 10 == 0:
+            #torch.save(netG.state_dict(), "./model/netG"+str(epoch)+".pth")
+            #torch.save(netF.state_dict(), "./model/netF"+str(epoch)+".pth")
+        print(">>training: epoch" + str(epoch) + ", loss = ", loss.item())
+        loss_list.append(loss)
+    plt.plot([x for x in range(len(loss_list))],loss_list)
+    acc = test(netG, netF)
+    print("Final Accuracy:", acc)
+    with open(args.result_file, 'a') as f:
+        f.write(str(args.test_person))
+        f.write('\t')
+        f.write(str(acc))
+        f.write('\n')
+    return acc
 
+
+def test(netG, netF):
+    target_loader = DataLoader(target_set, batch_size=2, shuffle=args.shuffle)
+    correct_num = 0
+    total_num = 0
+    for i, (t_data, t_label) in enumerate(target_loader):
+        t_bottleneck = netG(t_data)
+        t_fc2_emb, t_logit = netF(t_bottleneck)
+        pred = t_logit.detach().numpy()
+        pred = pred.argmax(1)
+        gt = t_label.numpy()
+        correct_num += np.sum(gt == pred)
+        total_num += gt.shape[0]
+    return correct_num/total_num
+
+
+
+def tmptest():
+    netG = BackboneNetwork()
+    netF = Classifier()
+    test(netG, netF)
+
+
+tmptest()
 train()
